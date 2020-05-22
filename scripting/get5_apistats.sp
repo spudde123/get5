@@ -35,16 +35,12 @@
 #pragma newdecls required
 
 int g_MatchID = -1;
-ConVar g_UseSVGCvar;
-char g_LogoBasePath[128];
+
 ConVar g_APIKeyCvar;
 char g_APIKey[128];
 
 ConVar g_APIURLCvar;
 char g_APIURL[128];
-
-#define LOGO_DIR "materials/panorama/images/tournaments/teams"
-#define LEGACY_LOGO_DIR "resource/flash/econ/tournaments/teams"
 
 // clang-format off
 public Plugin myinfo = {
@@ -59,8 +55,7 @@ public Plugin myinfo = {
 public void OnPluginStart() {
   InitDebugLog("get5_debug", "get5_api");
   LogDebug("OnPluginStart version=%s", PLUGIN_VERSION);
-  g_UseSVGCvar = CreateConVar("get5_use_svg", "1", "support svg team logos");
-  HookConVarChange(g_UseSVGCvar, LogoBasePathChanged);
+
   g_APIKeyCvar =
       CreateConVar("get5_web_api_key", "", "Match API key, this is automatically set through rcon");
   HookConVarChange(g_APIKeyCvar, ApiInfoChanged);
@@ -95,10 +90,6 @@ public Action Command_Avaliable(int client, int args) {
   delete json;
 
   return Plugin_Handled;
-}
-
-public void LogoBasePathChanged(ConVar convar, const char[] oldValue, const char[] newValue) {
-  g_LogoBasePath = g_UseSVGCvar.BoolValue ? LOGO_DIR : LEGACY_LOGO_DIR;
 }
 
 public void ApiInfoChanged(ConVar convar, const char[] oldValue, const char[] newValue) {
@@ -161,74 +152,6 @@ public void Get5_OnSeriesInit() {
   Get5_GetMatchID(matchid, sizeof(matchid));
   g_MatchID = StringToInt(matchid);
 
-  // Handle new logos.
-  if (!DirExists(g_LogoBasePath)) {
-    if (!CreateDirectory(g_LogoBasePath, 755)) {
-      LogError("Failed to create logo directory: %s", g_LogoBasePath);
-    }
-  }
-
-  char logo1[32];
-  char logo2[32];
-  GetConVarStringSafe("mp_teamlogo_1", logo1, sizeof(logo1));
-  GetConVarStringSafe("mp_teamlogo_2", logo2, sizeof(logo2));
-  CheckForLogo(logo1);
-  CheckForLogo(logo2);
-}
-
-public void CheckForLogo(const char[] logo) {
-  if (StrEqual(logo, "")) {
-    return;
-  }
-
-  char logoPath[PLATFORM_MAX_PATH + 1];
-  // change png to svg because it's better supported
-  if (g_UseSVGCvar.BoolValue) {
-    Format(logoPath, sizeof(logoPath), "%s/%s.svg", g_LogoBasePath, logo);
-  } else {
-    Format(logoPath, sizeof(logoPath), "%s/%s.png", g_LogoBasePath, logo);
-  }
-
-  // Try to fetch the file if we don't have it.
-  if (!FileExists(logoPath)) {
-    LogDebug("Fetching logo for %s", logo);
-    Handle req = g_UseSVGCvar.BoolValue
-                     ? CreateRequest(k_EHTTPMethodGET, "/static/img/logos/%s.svg", logo)
-                     : CreateRequest(k_EHTTPMethodGET, "/static/img/logos/%s.png", logo);
-
-    if (req == INVALID_HANDLE) {
-      return;
-    }
-
-    Handle pack = CreateDataPack();
-    WritePackString(pack, logo);
-
-    SteamWorks_SetHTTPRequestContextValue(req, view_as<int>(pack));
-    SteamWorks_SetHTTPCallbacks(req, LogoCallback);
-    SteamWorks_SendHTTPRequest(req);
-  }
-}
-
-public int LogoCallback(Handle request, bool failure, bool successful, EHTTPStatusCode status, int data) {
-  if (failure || !successful) {
-    LogError("Logo request failed, status code = %d", status);
-    return;
-  }
-
-  DataPack pack = view_as<DataPack>(data);
-  pack.Reset();
-  char logo[32];
-  pack.ReadString(logo, sizeof(logo));
-
-  char logoPath[PLATFORM_MAX_PATH + 1];
-  if (g_UseSVGCvar.BoolValue) {
-    Format(logoPath, sizeof(logoPath), "%s/%s.svg", g_LogoBasePath, logo);
-  } else {
-    Format(logoPath, sizeof(logoPath), "%s/%s.png", g_LogoBasePath, logo);
-  }
-
-  LogMessage("Saved logo for %s to %s", logo, logoPath);
-  SteamWorks_WriteHTTPResponseBodyToFile(request, logoPath);
 }
 
 public void Get5_OnGoingLive(int mapNumber) {
